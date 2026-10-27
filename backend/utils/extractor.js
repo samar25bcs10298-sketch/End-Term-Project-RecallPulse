@@ -1,13 +1,11 @@
-const { GoogleGenAI } = require('@google/genai');
+const Groq = require('groq-sdk');
 
 /**
- * Intelligent AI Extractor powered by Google Gemini
+ * Intelligent Academic Material Extractor powered by Groq (openai/gpt-oss-120b)
  * 
- * Takes unstructured notes, markdown summaries, or textbooks and extracts:
- * 1. High-Yield Flashcards (Concept, Natural Prompt, Precise Complete Explanation)
- * 2. 4-Option Multiple Choice Questions (with realistic distractors and explanations)
- * 
- * Falls back gracefully to deterministic parsing if API key is not present.
+ * Takes unstructured study notes and extracts:
+ * 1. High-yield flashcards with natural, clear questions and comprehensive explanations.
+ * 2. Conceptual 4-option multiple choice questions with realistic distractors and explanations.
  */
 
 async function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
@@ -15,30 +13,30 @@ async function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
     throw new Error('Valid text content is required for generation');
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   if (apiKey) {
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const groq = new Groq({ apiKey });
 
       const prompt = `You are an expert academic tutor and cognitive scientist.
 Analyze the following study notes and extract:
-1. High-yield flashcards for active recall. Every question must be a natural, clear question (e.g. "What is Regression in machine learning?", "What is the primary function of the Fallopian Tubes?"). Never use meta-questions like "What is Key Concept 1?" or "What is The Core Learning Paradigms?".
-Every answer must be a complete, grammatically sound, comprehensive explanation.
-2. 4-option multiple choice questions (MCQs) that test deep conceptual understanding, complete with 4 distinct options, the correct index (0-3), and a clear explanation.
+1. High-yield flashcards for active recall. Every question MUST be a natural, clear question (e.g. "What is Regression in machine learning and what is its goal?", "What is the primary function of the Fallopian Tubes?"). Never create meta-questions like "What is Key Concept 1?" or "What is The Core Learning Paradigms?".
+Every answer MUST be a complete, grammatically sound, comprehensive explanation.
+2. 4-option multiple choice questions (MCQs) that test conceptual understanding, complete with 4 distinct options, the correct index (0-3), and an explanation.
 
 Study Notes:
 """
 ${rawText}
 """
 
-You MUST respond strictly with valid JSON conforming to this schema (no extra text, no markdown backticks, just raw JSON):
+You MUST respond strictly with valid JSON conforming to this schema (no markdown backticks, no markdown prefix, just pure raw JSON):
 {
   "flashcards": [
     {
-      "question": "Clear, natural question",
+      "question": "Natural, clear question text",
       "answer": "Complete, accurate explanation",
-      "conceptTag": "Short concept topic name"
+      "conceptTag": "Short concept name"
     }
   ],
   "mcqs": [
@@ -51,25 +49,27 @@ You MUST respond strictly with valid JSON conforming to this schema (no extra te
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        }
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are an academic JSON generator. You output only valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        model: 'openai/gpt-oss-120b',
+        temperature: 0.3,
+        response_format: { type: 'json_object' }
       });
 
-      const responseText = response.text.trim();
+      const responseText = chatCompletion.choices[0].message.content.trim();
       const parsed = JSON.parse(responseText);
 
       if (parsed.flashcards && Array.isArray(parsed.flashcards) && parsed.flashcards.length > 0) {
         return {
-          flashcards: parsed.flashcards.slice(0, 20),
-          mcqs: (parsed.mcqs || []).slice(0, 10)
+          flashcards: parsed.flashcards.slice(0, 25),
+          mcqs: (parsed.mcqs || []).slice(0, 12)
         };
       }
     } catch (err) {
-      console.warn('Gemini extraction failed, falling back to local extractor:', err.message);
+      console.warn('Groq extraction error, falling back to local extractor:', err.message);
     }
   }
 
@@ -78,13 +78,9 @@ You MUST respond strictly with valid JSON conforming to this schema (no extra te
 }
 
 function fallbackRuleExtractor(rawText, deckTitle) {
-  const sanitized = rawText
-    .replace(/[┌┐└┘├┤─│┼]/g, '')
-    .trim();
-
+  const sanitized = rawText.replace(/[┌┐└┘├┤─│┼]/g, '').trim();
   const lines = sanitized.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   const flashcards = [];
-  const mcqs = [];
 
   const colonRegex = /^[\s•\-\*\d\.\)]*\s*([^:\n—–]{2,45})\s*[:—–]\s*(.+)$/;
 
