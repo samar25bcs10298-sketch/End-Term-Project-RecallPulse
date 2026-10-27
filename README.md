@@ -10,6 +10,10 @@
 - **Student Name:** Samar Bhardwaj
 - **Domain:** EdTech / Cognitive Science / Developer Productivity
 - **Application Type:** Full-Stack Web Application (MERN)
+- **Live Deployed App:** [https://recall-pulse-beta.vercel.app](https://recall-pulse-beta.vercel.app)
+- **Live API Endpoint:** [https://recallpulse-backend.onrender.com](https://recallpulse-backend.onrender.com)
+- **GitHub Repository:** [https://github.com/samar25bcs10298-sketch/End-Term-Project-RecallPulse](https://github.com/samar25bcs10298-sketch/End-Term-Project-RecallPulse)
+
 
 ---
 
