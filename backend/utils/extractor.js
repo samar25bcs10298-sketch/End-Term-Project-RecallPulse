@@ -135,6 +135,70 @@ Respond strictly with valid JSON conforming to this schema (no extra text, no ma
   return parsed.newQuizzes || [];
 }
 
+/**
+ * Generates 5 NEW, non-duplicate flashcards targeting unexplored concepts
+ */
+async function generateMoreFlashcards(rawText, existingQuestions = []) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('AI generation is unavailable');
+  }
+
+  const groq = new Groq({ apiKey });
+
+  const existingListText = existingQuestions.length > 0
+    ? existingQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+    : 'None yet';
+
+  const prompt = `You are an expert academic tutor creating additional flashcards for a student.
+Based on the study notes provided, generate 5 NEW high-yield flashcards.
+
+RULES:
+1. Do NOT duplicate or rephrase concepts already covered in these existing flashcards:
+Already Covered Questions:
+${existingListText}
+
+2. Target unexplored angles from the notes:
+   - Sub-concepts, mechanisms, or edge cases not yet covered
+   - Comparisons or contrasts between concepts
+   - Real-world applications or worked examples of principles
+   - "Why does X happen?" or "What is the consequence of Y?" style questions
+
+3. Every question MUST be a natural, clear question (e.g. "What is the primary trade-off of using k-NN on large datasets?"). Never write meta-questions like "What is Key Concept 3?".
+4. Every answer MUST be a complete, grammatically sound, comprehensive explanation.
+
+Study Notes:
+"""
+${rawText}
+"""
+
+Respond strictly with valid JSON (no markdown backticks, no extra text):
+{
+  "newFlashcards": [
+    {
+      "question": "Natural, clear question text",
+      "answer": "Complete, accurate explanation",
+      "conceptTag": "Short concept name"
+    }
+  ]
+}`;
+
+  const chatCompletion = await groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: 'You are an academic JSON generator. You output only valid JSON.' },
+      { role: 'user', content: prompt }
+    ],
+    model: 'openai/gpt-oss-120b',
+    temperature: 0.4,
+    response_format: { type: 'json_object' }
+  });
+
+  const responseText = chatCompletion.choices[0].message.content.trim();
+  const parsed = JSON.parse(responseText);
+
+  return parsed.newFlashcards || [];
+}
+
 function fallbackRuleExtractor(rawText, deckTitle) {
   const sanitized = rawText.replace(/[┌┐└┘├┤─│┼]/g, '').trim();
   const lines = sanitized.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
@@ -164,4 +228,4 @@ function fallbackRuleExtractor(rawText, deckTitle) {
   };
 }
 
-module.exports = { extractStudyMaterial, generateMoreQuizzes };
+module.exports = { extractStudyMaterial, generateMoreQuizzes, generateMoreFlashcards };

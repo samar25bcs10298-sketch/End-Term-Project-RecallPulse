@@ -22,6 +22,12 @@ const ReviewSession = () => {
   const [sessionCompleted, setSessionCompleted] = useState(false);
   const [lastSM2Result, setLastSM2Result] = useState(null);
 
+  // Generate more flashcards state
+  const [generatingMore, setGeneratingMore] = useState(false);
+  const [generateMsg, setGenerateMsg] = useState('');
+  const [generateErr, setGenerateErr] = useState('');
+
+
   useEffect(() => {
     const fetchDeck = async () => {
       try {
@@ -63,7 +69,32 @@ const ReviewSession = () => {
     }
   };
 
+
+  const handleGenerateMoreCards = async () => {
+    try {
+      setGeneratingMore(true);
+      setGenerateMsg('');
+      setGenerateErr('');
+
+      const res = await api.post(`/decks/${deckId}/cards/generate-more`);
+      if (res.data.success) {
+        // Append new cards to local state so session continues with them
+        setCards(prev => [...prev, ...res.data.newCards]);
+        setGenerateMsg(`✨ Added ${res.data.newCards.length} new flashcards! Keep going ↓`);
+        // If session was already completed, reopen it so user can review new cards
+        if (sessionCompleted) {
+          setSessionCompleted(false);
+        }
+      }
+    } catch (err) {
+      setGenerateErr(err.response?.data?.message || 'Could not generate more flashcards for these notes.');
+    } finally {
+      setGeneratingMore(false);
+    }
+  };
+
   if (loading) return <div className="state-card">Loading review session...</div>;
+
   if (!deck) return <div className="state-card">Deck not found.</div>;
   if (cards.length === 0) return (
     <div className="state-card">
@@ -84,7 +115,18 @@ const ReviewSession = () => {
             Cards are now scheduled according to their memory decay curve.
           </p>
 
+          {generateMsg && <div className="alert-success-banner">{generateMsg}</div>}
+          {generateErr && <div className="alert-error">{generateErr}</div>}
+
           <div className="complete-actions">
+            <button
+              type="button"
+              onClick={handleGenerateMoreCards}
+              disabled={generatingMore}
+              className="btn-action-more"
+            >
+              {generatingMore ? 'Synthesizing Cards...' : '⚡ Generate 5 More Flashcards'}
+            </button>
             <Link to={`/quiz/${deckId}`} className="btn-primary">
               🎯 Test Recall in Quiz Mode →
             </Link>
@@ -96,6 +138,7 @@ const ReviewSession = () => {
       </div>
     );
   }
+
 
   const currentCard = cards[currentIndex];
   const progressPercent = Math.round(((currentIndex) / cards.length) * 100);
@@ -115,7 +158,11 @@ const ReviewSession = () => {
         </div>
       </div>
 
+      {generateMsg && <div className="alert-success-banner">{generateMsg}</div>}
+      {generateErr && <div className="alert-error">{generateErr}</div>}
+
       {/* SM-2 Current Parameters Badge */}
+
       <div className="sm2-metadata-ribbon">
         <span>Current Interval: <strong>{currentCard.interval || 0}d</strong></span>
         <span>Ease Factor (EF): <strong>{currentCard.easeFactor || 2.5}</strong></span>
@@ -162,6 +209,17 @@ const ReviewSession = () => {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="quiz-action-bar">
+        <button
+          type="button"
+          onClick={handleGenerateMoreCards}
+          disabled={generatingMore}
+          className="btn-generate-more-secondary"
+        >
+          {generatingMore ? 'Synthesizing Cards...' : '+ Generate 5 More Flashcards'}
+        </button>
       </div>
     </div>
   );

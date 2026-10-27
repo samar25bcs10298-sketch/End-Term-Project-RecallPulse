@@ -9,6 +9,7 @@ const {
   reviewCard,
   submitQuizSession,
   generateMoreQuizQuestions,
+  generateMoreFlashcardsController,
   getAnalyticsOverview
 } = require('../controllers/deck.controller.js');
 
@@ -23,5 +24,6 @@ router.delete('/:id', deleteDeck);
 router.post('/:deckId/cards/:cardId/review', reviewCard);
 router.post('/:id/quiz/submit', submitQuizSession);
 router.post('/:id/quiz/generate-more', generateMoreQuizQuestions);
+router.post('/:id/cards/generate-more', generateMoreFlashcardsController);
 
 module.exports = router;

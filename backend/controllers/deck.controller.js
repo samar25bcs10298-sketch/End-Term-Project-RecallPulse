@@ -1,7 +1,7 @@
 const Deck = require('../models/deck.model.js');
 const User = require('../models/user.model.js');
 const QuizSession = require('../models/quizSession.model.js');
-const { extractStudyMaterial, generateMoreQuizzes } = require('../utils/extractor.js');
+const { extractStudyMaterial, generateMoreQuizzes, generateMoreFlashcards } = require('../utils/extractor.js');
 const { calculateSM2 } = require('../utils/sm2.js');
 
 // POST /api/decks/generate (Generate flashcards & quizzes from raw text)
@@ -249,7 +249,65 @@ const generateMoreQuizQuestions = async (req, res) => {
   }
 };
 
-// GET /api/decks/analytics/overview (Aggregate retention, streak, due cards)
+// POST /api/decks/:id/cards/generate-more (Synthesize 5 additional non-duplicate flashcards)
+const generateMoreFlashcardsController = async (req, res) => {
+  try {
+    const { id: deckId } = req.params;
+
+    const deck = await Deck.findOne({ _id: deckId, user: req.user._id });
+    if (!deck) {
+      return res.status(404).json({ success: false, message: 'Deck not found' });
+    }
+
+    // Saturation Guard: cap at 50 flashcards total
+    if (deck.cards.length >= 50) {
+      return res.status(400).json({
+        success: false,
+        message: 'This deck has reached its maximum card capacity (50 cards). You\'ve thoroughly covered these notes — start a new deck or head to Review!'
+      });
+    }
+
+    const existingQuestions = deck.cards.map(c => c.question);
+    const newCards = await generateMoreFlashcards(deck.rawSourceText || deck.title, existingQuestions);
+
+    if (!newCards || newCards.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'All key concepts from these notes have already been captured in your existing flashcards!'
+      });
+    }
+
+    // Initialize SM-2 fields for each new card (same defaults as deck creation)
+    const cardsWithSM2 = newCards.map(c => ({
+      question: c.question,
+      answer: c.answer,
+      conceptTag: c.conceptTag || 'Concept',
+      easeFactor: 2.5,
+      interval: 0,
+      repetition: 0,
+      nextReviewDate: new Date(),
+      reviewCount: 0
+    }));
+
+    deck.cards.push(...cardsWithSM2);
+    await deck.save();
+
+    // Return the newly added cards (the last N items in deck.cards)
+    const addedCards = deck.cards.slice(-cardsWithSM2.length);
+
+    res.status(200).json({
+      success: true,
+      message: `Added ${addedCards.length} new flashcards to this deck!`,
+      newCards: addedCards,
+      totalCards: deck.cards.length
+    });
+  } catch (error) {
+    console.error('generateMoreFlashcardsController error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error generating more flashcards' });
+  }
+};
+
+
 const getAnalyticsOverview = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -300,5 +358,6 @@ module.exports = {
   reviewCard,
   submitQuizSession,
   generateMoreQuizQuestions,
+  generateMoreFlashcardsController,
   getAnalyticsOverview
 };
