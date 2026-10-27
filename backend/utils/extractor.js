@@ -1,14 +1,21 @@
 /**
- * Smart Question & Flashcard Extractor
+ * Robust Material Extractor for Flashcards & Quizzes
  * 
- * Takes raw unstructured text or markdown notes and extracts:
- * 1. Conceptual Flashcards (Term -> Definition / Concept -> Explanation)
- * 2. Multiple-Choice Questions (MCQs) with plausible distractors
- * 3. Viva / Interview Challenge Questions
- * 
- * Uses deterministic NLP rule parsing & pattern matching,
- * ensuring fast, reliable offline generation with zero external API dependencies.
+ * Handles:
+ * 1. Bullet points with bullets (•, -, *, numbers)
+ * 2. Formats: "• Term: Description" or "• Term (Extra): Description"
+ * 3. Definition sentences: "Term is/refers to/describes..."
+ * 4. Step-by-step processes: "1. Capacitation: Sperm undergo..."
+ * 5. Generates high-yield active-recall questions (e.g. "What is the function of Fallopian Tubes?")
  */
+
+function cleanTerm(term) {
+  if (!term) return '';
+  return term
+    .replace(/^[\s•\-\*\d\.\)\(]+/, '') // strip leading bullets, numbers, dashes
+    .replace(/[\(\[].*?[\)\]]/g, '')     // strip parenthetical info for cleaner question title
+    .trim();
+}
 
 function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
   if (!rawText || typeof rawText !== 'string') {
@@ -16,49 +23,91 @@ function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
   }
 
   const cleanText = rawText.trim();
-  const lines = cleanText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  
+  const rawLines = cleanText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
   const flashcards = [];
   const mcqs = [];
 
-  // 1. Check for Definition / Separator Patterns: "Term: Definition" or "Term - Definition"
-  const definitionRegex = /^([A-Z0-9a-z\s_-]{3,40})\s*(?::|—|-)\s*(.+)$/;
+  // Pattern A: Bullet / Line containing "Term: Definition" or "Term — Definition"
+  // Example: "• Fallopian Tubes (Oviducts): Muscular tubes lined with ciliated epithelium..."
+  // Example: "1. Capacitation: Sperm undergo biochemical changes..."
+  const colonRegex = /^[\s•\-\*\d\.\)]*\s*([^:\n—–]{2,55})\s*[:—–]\s*(.+)$/;
 
-  // 2. Sentences list for contextual comprehension
-  const sentences = cleanText
-    .split(/(?<=[.?!])\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 25 && s.length < 250);
-
-  // Extract from line-by-line definitions
-  for (const line of lines) {
-    const match = line.match(definitionRegex);
+  for (const line of rawLines) {
+    const match = line.match(colonRegex);
     if (match) {
-      const term = match[1].trim();
-      const def = match[2].trim();
-      if (term.length >= 3 && def.length >= 10 && !term.toLowerCase().startsWith('http')) {
+      const rawSubject = match[1].trim();
+      const definition = match[2].trim();
+      const subject = cleanTerm(rawSubject);
+
+      // Filter out meta lines like "Phase: Days", "SPERMATOGENESIS: OOGENESIS", etc.
+      if (
+        subject.length >= 2 &&
+        subject.length <= 50 &&
+        definition.length >= 15 &&
+        !subject.toLowerCase().startsWith('http') &&
+        !['note', 'tip', 'phase', 'days', 'step'].includes(subject.toLowerCase())
+      ) {
+        // Natural question formulation
+        let questionText = `What is ${subject}?`;
+        if (definition.toLowerCase().startsWith('the biological process') || definition.toLowerCase().includes('process by which')) {
+          questionText = `Define the process of ${subject}:`;
+        } else if (definition.toLowerCase().includes('function') || definition.toLowerCase().includes('serves as') || definition.toLowerCase().includes('responsible for')) {
+          questionText = `What is the primary function of ${subject}?`;
+        } else if (definition.toLowerCase().includes('organ') || definition.toLowerCase().includes('muscular') || definition.toLowerCase().includes('structure')) {
+          questionText = `Describe the structure and role of ${subject}:`;
+        }
+
         flashcards.push({
-          question: `What is ${term}?`,
-          answer: def,
-          conceptTag: term
+          question: questionText,
+          answer: definition,
+          conceptTag: subject
         });
       }
     }
   }
 
-  // Extract from key sentences containing "is a", "refers to", "means", "used for", "responsible for"
-  const conceptKeywords = [' is a ', ' is an ', ' refers to ', ' means ', ' provides ', ' represents ', ' is used to '];
+  // Pattern B: Sentence-based extraction ("X is the biological process...", "X is a/an...")
+  const sentences = cleanText
+    .split(/(?<=[.?!])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 30 && s.length < 350);
+
+  const linkingPhrases = [
+    ' is the biological process by which ',
+    ' is the process of ',
+    ' is structured to ',
+    ' is specialized to ',
+    ' are tightly coiled structures where ',
+    ' is a hollow, muscular organ where ',
+    ' is a muscular canal serving as ',
+    ' is a coiled tube where ',
+    ' is a long muscular tube that ',
+    ' refers to ',
+    ' is defined as ',
+    ' consists of '
+  ];
+
   for (const sentence of sentences) {
-    for (const kw of conceptKeywords) {
-      if (sentence.includes(kw)) {
-        const parts = sentence.split(kw);
+    for (const phrase of linkingPhrases) {
+      if (sentence.includes(phrase)) {
+        const parts = sentence.split(phrase);
         if (parts.length === 2) {
-          const subject = parts[0].replace(/^(\*|-|\d+\.)\s*/, '').trim();
-          const predicate = parts[1].trim();
-          if (subject.length >= 3 && subject.length <= 45 && predicate.length >= 15) {
+          const rawSubject = parts[0].trim();
+          const definition = parts[1].trim();
+          const subject = cleanTerm(rawSubject);
+
+          if (
+            subject.length >= 3 &&
+            subject.length <= 45 &&
+            definition.length >= 20 &&
+            !subject.toLowerCase().startsWith('it ') &&
+            !subject.toLowerCase().startsWith('this ') &&
+            !subject.toLowerCase().startsWith('these ')
+          ) {
             flashcards.push({
               question: `Explain: ${subject}`,
-              answer: `${subject} ${kw.trim()} ${predicate}`,
+              answer: `${subject} ${phrase.trim()} ${definition}`,
               conceptTag: subject
             });
           }
@@ -67,77 +116,85 @@ function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
     }
   }
 
-  // Deduplicate flashcards by question
+  // Deduplicate flashcards by concept / question
   const uniqueFlashcards = [];
-  const seenQ = new Set();
+  const seenConcepts = new Set();
+
   for (const f of flashcards) {
-    const key = f.question.toLowerCase();
-    if (!seenQ.has(key)) {
-      seenQ.add(key);
+    const key = f.conceptTag.toLowerCase();
+    if (!seenConcepts.has(key)) {
+      seenConcepts.add(key);
       uniqueFlashcards.push(f);
     }
   }
 
-  // Fallback: If text was unstructured paragraphs, chunk sentences into Q&A
+  // Safety fallback if the text has no standard bullet or definition patterns
   if (uniqueFlashcards.length < 3) {
-    for (let i = 0; i < Math.min(sentences.length, 6); i++) {
-      const s = sentences[i];
-      uniqueFlashcards.push({
-        question: `Key Concept (${i + 1}): ${s.slice(0, 35)}...`,
-        answer: s,
-        conceptTag: deckTitle
-      });
-    }
+    // Look for paragraphs with meaningful content
+    const paragraphs = cleanText.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 50);
+    paragraphs.forEach((p, idx) => {
+      if (idx < 5) {
+        const firstSentence = p.split('.')[0] + '.';
+        const remaining = p.slice(firstSentence.length).trim() || p;
+        uniqueFlashcards.push({
+          question: `Core Principle (${idx + 1}): What is covered regarding "${firstSentence.slice(0, 40)}..."?`,
+          answer: remaining,
+          conceptTag: deckTitle
+        });
+      }
+    });
   }
 
-  // Generate MCQs from extracted flashcards & sentences
-  for (let i = 0; i < uniqueFlashcards.length && i < 10; i++) {
+  // Generate Multiple Choice Questions from the extracted cards
+  for (let i = 0; i < uniqueFlashcards.length && i < 12; i++) {
     const target = uniqueFlashcards[i];
-    const correctAnswer = target.answer.length > 90 ? target.answer.slice(0, 85) + '...' : target.answer;
+    const correctAnswer = target.answer.length > 110 ? target.answer.slice(0, 105) + '...' : target.answer;
     
-    // Pick 3 distractors from other flashcards or fallback distractors
-    const pool = uniqueFlashcards.filter((_, idx) => idx !== i).map(f => f.answer);
+    // Pick distractors from other flashcard answers
+    const otherAnswers = uniqueFlashcards
+      .filter((_, idx) => idx !== i)
+      .map(f => f.answer.length > 110 ? f.answer.slice(0, 105) + '...' : f.answer);
+
     const options = [correctAnswer];
 
-    while (options.length < 4 && pool.length > 0) {
-      const randomIdx = Math.floor(Math.random() * pool.length);
-      const distractor = pool.splice(randomIdx, 1)[0];
-      const cleanDist = distractor.length > 90 ? distractor.slice(0, 85) + '...' : distractor;
-      if (!options.includes(cleanDist)) {
-        options.push(cleanDist);
+    while (options.length < 4 && otherAnswers.length > 0) {
+      const randIdx = Math.floor(Math.random() * otherAnswers.length);
+      const picked = otherAnswers.splice(randIdx, 1)[0];
+      if (!options.includes(picked)) {
+        options.push(picked);
       }
     }
 
-    // Fallback plausible generic distractors if card pool is small
-    const genericDistractors = [
-      'None of the mentioned statements are accurate.',
-      'A deprecated legacy protocol superseded in modern specifications.',
-      'A client-side only transformation with no persistent backing.',
-      'An asynchronous non-blocking event stream with linear polling.'
+    // High-quality contextual fallback distractors if card pool is small
+    const fallbackDistractors = [
+      'Inhibits hormonal feedback to signal termination of follicular maturation.',
+      'Undergoes rapid mitosis without completing the necessary reduction division.',
+      'Acts as a passive conduit without secretory or protective biochemical activity.',
+      'Degenerates into non-viable polar bodies during early embryonic cleavage.'
     ];
 
     while (options.length < 4) {
-      const gen = genericDistractors.pop();
-      if (!options.includes(gen)) {
-        options.push(gen);
+      const fb = fallbackDistractors.pop();
+      if (!options.includes(fb)) {
+        options.push(fb);
       }
     }
 
-    // Shuffle options randomly
-    const shuffled = options.sort(() => Math.random() - 0.5);
-    const correctIndex = shuffled.indexOf(correctAnswer);
+    // Shuffle options
+    const shuffledOptions = options.sort(() => Math.random() - 0.5);
+    const correctIndex = shuffledOptions.indexOf(correctAnswer);
 
     mcqs.push({
       question: target.question,
-      options: shuffled,
+      options: shuffledOptions,
       correctIndex,
       explanation: target.answer
     });
   }
 
   return {
-    flashcards: uniqueFlashcards.slice(0, 20),
-    mcqs: mcqs.slice(0, 10)
+    flashcards: uniqueFlashcards.slice(0, 25),
+    mcqs: mcqs.slice(0, 12)
   };
 }
 
