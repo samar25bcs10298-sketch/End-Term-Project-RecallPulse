@@ -8,6 +8,7 @@ const {
   deleteDeck,
   reviewCard,
   submitQuizSession,
+  generateMoreQuizQuestions,
   getAnalyticsOverview
 } = require('../controllers/deck.controller.js');
 
@@ -21,5 +22,6 @@ router.get('/:id', getDeckById);
 router.delete('/:id', deleteDeck);
 router.post('/:deckId/cards/:cardId/review', reviewCard);
 router.post('/:id/quiz/submit', submitQuizSession);
+router.post('/:id/quiz/generate-more', generateMoreQuizQuestions);
 
 module.exports = router;

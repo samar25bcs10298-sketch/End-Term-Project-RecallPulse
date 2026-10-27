@@ -13,6 +13,11 @@ const QuizMode = () => {
   const [submitting, setSubmitting] = useState(false);
   const [seconds, setSeconds] = useState(0);
 
+  // Generating more state
+  const [generatingMore, setGeneratingMore] = useState(false);
+  const [generateMsg, setGenerateMsg] = useState('');
+  const [generateErr, setGenerateErr] = useState('');
+
   useEffect(() => {
     const fetchQuiz = async () => {
       try {
@@ -75,12 +80,40 @@ const QuizMode = () => {
     }
   };
 
+  const handleGenerateMore = async () => {
+    try {
+      setGeneratingMore(true);
+      setGenerateMsg('');
+      setGenerateErr('');
+
+      const res = await api.post(`/decks/${deckId}/quiz/generate-more`);
+      if (res.data.success) {
+        setQuizzes([...quizzes, ...res.data.newQuizzes]);
+        setGenerateMsg(`✨ Added ${res.data.newQuizzes.length} new scenario questions!`);
+        // If already submitted, reset submission so user can test the newly added questions
+        if (submitted) {
+          setSubmitted(false);
+          setResultSession(null);
+        }
+      }
+    } catch (err) {
+      setGenerateErr(err.response?.data?.message || 'Could not generate more questions for these notes.');
+    } finally {
+      setGeneratingMore(false);
+    }
+  };
+
   if (loading) return <div className="state-card">Loading generated quiz...</div>;
   if (!deck) return <div className="state-card">Deck not found.</div>;
   if (quizzes.length === 0) return (
     <div className="state-card">
-      <h3>No quizzes generated for this deck.</h3>
-      <Link to="/dashboard" className="btn-primary">Back to Dashboard</Link>
+      <h3>No quizzes generated for this deck yet.</h3>
+      <button onClick={handleGenerateMore} disabled={generatingMore} className="btn-primary mt-1">
+        {generatingMore ? 'Synthesizing Questions...' : '+ Generate 5 Practice Questions'}
+      </button>
+      <div style={{ marginTop: '1rem' }}>
+        <Link to="/dashboard" className="btn-secondary">Back to Dashboard</Link>
+      </div>
     </div>
   );
 
@@ -95,12 +128,15 @@ const QuizMode = () => {
       <div className="quiz-header">
         <div>
           <h2>🎯 Active Recall Quiz: {deck.title}</h2>
-          <p>{quizzes.length} Questions • Instant Validation & Explanations</p>
+          <p>{quizzes.length} Questions • Instant Validation & Multi-Angle Synthesis</p>
         </div>
         <div className="quiz-timer-badge">
           ⏱ Time: <strong>{formatTimer(seconds)}</strong>
         </div>
       </div>
+
+      {generateMsg && <div className="alert-success-banner">{generateMsg}</div>}
+      {generateErr && <div className="alert-error">{generateErr}</div>}
 
       {submitted && resultSession && (
         <div className="quiz-score-banner">
@@ -112,6 +148,14 @@ const QuizMode = () => {
             <h3>{resultSession.scorePercentage >= 80 ? '🌟 Outstanding Recall!' : resultSession.scorePercentage >= 50 ? '👍 Solid Effort!' : '📖 Needs Review'}</h3>
             <p>Your session stats and mastery trajectory have been persisted to your profile analytics.</p>
             <div className="score-action-btns">
+              <button
+                type="button"
+                onClick={handleGenerateMore}
+                disabled={generatingMore}
+                className="btn-action-more"
+              >
+                {generatingMore ? 'Synthesizing...' : '⚡ Generate 5 More Questions'}
+              </button>
               <Link to={`/review/${deckId}`} className="btn-primary">
                 🧠 Review SM-2 Flashcards
               </Link>
@@ -176,8 +220,8 @@ const QuizMode = () => {
         })}
       </div>
 
-      {!submitted && (
-        <div className="quiz-submit-bar">
+      <div className="quiz-action-bar">
+        {!submitted && (
           <button
             type="button"
             onClick={handleSubmitQuiz}
@@ -186,8 +230,17 @@ const QuizMode = () => {
           >
             {submitting ? 'Evaluating...' : `Submit Quiz (${Object.keys(selectedAnswers).length}/${quizzes.length} Answered)`}
           </button>
-        </div>
-      )}
+        )}
+
+        <button
+          type="button"
+          onClick={handleGenerateMore}
+          disabled={generatingMore}
+          className="btn-generate-more-secondary"
+        >
+          {generatingMore ? 'Synthesizing...' : '+ Generate 5 More Questions'}
+        </button>
+      </div>
     </div>
   );
 };

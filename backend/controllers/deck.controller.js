@@ -1,7 +1,7 @@
 const Deck = require('../models/deck.model.js');
 const User = require('../models/user.model.js');
 const QuizSession = require('../models/quizSession.model.js');
-const { extractStudyMaterial } = require('../utils/extractor.js');
+const { extractStudyMaterial, generateMoreQuizzes } = require('../utils/extractor.js');
 const { calculateSM2 } = require('../utils/sm2.js');
 
 // POST /api/decks/generate (Generate flashcards & quizzes from raw text)
@@ -205,6 +205,50 @@ const submitQuizSession = async (req, res) => {
   }
 };
 
+// POST /api/decks/:id/quiz/generate-more (Synthesize 5 additional non-duplicate questions)
+const generateMoreQuizQuestions = async (req, res) => {
+  try {
+    const { id: deckId } = req.params;
+
+    const deck = await Deck.findOne({ _id: deckId, user: req.user._id });
+    if (!deck) {
+      return res.status(404).json({ success: false, message: 'Deck not found' });
+    }
+
+    // Saturation Guard: If already at 30 questions, prevent bloat
+    if (deck.quizzes.length >= 30) {
+      return res.status(400).json({
+        success: false,
+        message: 'Question pool for this deck has reached its maximum mastery capacity (30 questions). Review existing cards or create a new deck.'
+      });
+    }
+
+    const existingQuestions = deck.quizzes.map(q => q.question);
+    const newQuizzes = await generateMoreQuizzes(deck.rawSourceText || deck.title, existingQuestions);
+
+    if (!newQuizzes || newQuizzes.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'All core concepts from these notes have been thoroughly covered!'
+      });
+    }
+
+    // Append new quizzes to the deck
+    deck.quizzes.push(...newQuizzes);
+    await deck.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Added ${newQuizzes.length} new scenario questions to this deck!`,
+      newQuizzes,
+      totalQuizzes: deck.quizzes.length
+    });
+  } catch (error) {
+    console.error('generateMoreQuizQuestions error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error generating more questions' });
+  }
+};
+
 // GET /api/decks/analytics/overview (Aggregate retention, streak, due cards)
 const getAnalyticsOverview = async (req, res) => {
   try {
@@ -255,5 +299,6 @@ module.exports = {
   deleteDeck,
   reviewCard,
   submitQuizSession,
+  generateMoreQuizQuestions,
   getAnalyticsOverview
 };

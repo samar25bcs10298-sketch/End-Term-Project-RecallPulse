@@ -2,10 +2,6 @@ const Groq = require('groq-sdk');
 
 /**
  * Intelligent Academic Material Extractor powered by Groq (openai/gpt-oss-120b)
- * 
- * Takes unstructured study notes and extracts:
- * 1. High-yield flashcards with natural, clear questions and comprehensive explanations.
- * 2. Conceptual 4-option multiple choice questions with realistic distractors and explanations.
  */
 
 async function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
@@ -73,8 +69,70 @@ You MUST respond strictly with valid JSON conforming to this schema (no markdown
     }
   }
 
-  // Fallback: Rule-based heuristic extraction
   return fallbackRuleExtractor(rawText, deckTitle);
+}
+
+/**
+ * Generates 5 NEW, non-duplicate conceptual & scenario-based quiz questions
+ */
+async function generateMoreQuizzes(rawText, existingQuestions = []) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('AI generation is unavailable');
+  }
+
+  const groq = new Groq({ apiKey });
+
+  const existingListText = existingQuestions.length > 0 
+    ? existingQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+    : 'None yet';
+
+  const prompt = `You are an academic examiner creating additional test questions for students.
+Based on the study notes provided, generate 5 NEW, challenging multiple-choice questions (MCQs).
+
+RULES:
+1. Do NOT duplicate or repeat the core concepts of these existing questions:
+Existing Questions Already Tested:
+${existingListText}
+
+2. Instead, test different cognitive angles:
+   - Scenario & application questions (e.g., "A researcher has X scenario, which method should they choose?")
+   - Trade-offs and comparison questions (e.g., "What is the primary trade-off between X and Y?")
+   - Edge cases or failure modes (e.g., "What occurs when X assumption is violated?")
+
+3. Each question must have 4 plausible, distinct options, the correct index (0-3), and a clear educational explanation.
+
+Study Notes:
+"""
+${rawText}
+"""
+
+Respond strictly with valid JSON conforming to this schema (no extra text, no markdown backticks):
+{
+  "newQuizzes": [
+    {
+      "question": "Question text",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Why this is correct"
+    }
+  ]
+}`;
+
+  const chatCompletion = await groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: 'You are an academic test author. Output only valid JSON.' },
+      { role: 'user', content: prompt }
+    ],
+    model: 'openai/gpt-oss-120b',
+    temperature: 0.4,
+    response_format: { type: 'json_object' }
+  });
+
+  const responseText = chatCompletion.choices[0].message.content.trim();
+  const parsed = JSON.parse(responseText);
+
+  return parsed.newQuizzes || [];
 }
 
 function fallbackRuleExtractor(rawText, deckTitle) {
@@ -106,4 +164,4 @@ function fallbackRuleExtractor(rawText, deckTitle) {
   };
 }
 
-module.exports = { extractStudyMaterial };
+module.exports = { extractStudyMaterial, generateMoreQuizzes };
