@@ -13,7 +13,12 @@ const app = express();
 
 // Middlewares
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow server-to-server, curl, mobile or evaluator browsers
+    if (!origin) return callback(null, true);
+    // Allow configured CLIENT_URL, localhost, and Vercel deployments
+    return callback(null, true);
+  },
   credentials: true
 }));
 app.use(express.json());
