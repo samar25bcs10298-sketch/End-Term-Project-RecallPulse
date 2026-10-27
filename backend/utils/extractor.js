@@ -1,12 +1,11 @@
 /**
- * Robust Material Extractor for Flashcards & Quizzes
+ * Precision Material Extractor for Flashcards & Quizzes
  * 
- * Handles:
- * 1. Bullet points with bullets (•, -, *, numbers)
- * 2. Formats: "• Term: Description" or "• Term (Extra): Description"
- * 3. Definition sentences: "Term is/refers to/describes..."
- * 4. Step-by-step processes: "1. Capacitation: Sperm undergo..."
- * 5. Generates high-yield active-recall questions (e.g. "What is the function of Fallopian Tubes?")
+ * Supports:
+ * 1. Heading + Definition paragraphs (e.g. "Support Vector Machines\nFinds the optimal hyperplane...")
+ * 2. Bullet lists with colons (e.g. "• Regression: The target variable y is continuous...")
+ * 3. Grammatical auto-completion (turns fragments like "Grouping similar..." into complete definitions)
+ * 4. Strips LaTeX/ASCII diagrams and table noise
  */
 
 function cleanTerm(term) {
@@ -17,106 +16,117 @@ function cleanTerm(term) {
     .trim();
 }
 
+function formatCompleteAnswer(term, definition) {
+  let cleanDef = definition.trim();
+  // Strip redundant leading "is a", "refers to"
+  cleanDef = cleanDef.replace(/^(is\s+(a|an|the)?|refers\s+to|are\s+)/i, '').trim();
+
+  // If definition starts with a lowercase or participle ("grouping", "used to", "the target"),
+  // make it a natural complete sentence:
+  const firstWord = cleanDef.split(' ')[0].toLowerCase();
+  
+  if (['grouping', 'predicting', 'dividing', 'finding', 'training', 'identifying', 'handling'].includes(firstWord)) {
+    return `${term} is the process of ${cleanDef.charAt(0).toLowerCase() + cleanDef.slice(1)}`;
+  }
+  
+  if (['the', 'a', 'an'].includes(firstWord)) {
+    return `${term}: ${cleanDef}`;
+  }
+
+  if (firstWord.startsWith('used')) {
+    return `${term} is ${cleanDef.charAt(0).toLowerCase() + cleanDef.slice(1)}`;
+  }
+
+  return `${term} refers to: ${cleanDef}`;
+}
+
 function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
   if (!rawText || typeof rawText !== 'string') {
     throw new Error('Valid text content is required for generation');
   }
 
-  const cleanText = rawText.trim();
-  const rawLines = cleanText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  // Pre-clean: strip ASCII art boxes / tables / lines
+  const sanitized = rawText
+    .replace(/[┌┐└┘├┤─│┼]/g, '') // strip ASCII box borders
+    .replace(/\\\(.*?\\\)/g, (match) => match.replace(/[\\(\)]/g, '')) // clean \( \) LaTeX tags
+    .trim();
+
+  const lines = sanitized.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
 
   const flashcards = [];
   const mcqs = [];
 
-  // Pattern A: Bullet / Line containing "Term: Definition" or "Term — Definition"
-  // Example: "• Fallopian Tubes (Oviducts): Muscular tubes lined with ciliated epithelium..."
-  // Example: "1. Capacitation: Sperm undergo biochemical changes..."
-  const colonRegex = /^[\s•\-\*\d\.\)]*\s*([^:\n—–]{2,55})\s*[:—–]\s*(.+)$/;
+  // Pattern 1: Heading followed by a descriptive paragraph
+  // Example:
+  // "Logistic Regression"
+  // "Despite its name, this is a linear classification algorithm..."
+  for (let i = 0; i < lines.length - 1; i++) {
+    const current = lines[i];
+    const next = lines[i + 1];
 
-  for (const line of rawLines) {
+    const isHeading = 
+      current.length >= 3 && 
+      current.length <= 40 && 
+      !current.includes(':') && 
+      !current.endsWith('.') &&
+      !current.startsWith('•') &&
+      !current.startsWith('-');
+
+    const isExplanation = 
+      next.length >= 30 && 
+      !next.startsWith('•') && 
+      !next.startsWith('-') &&
+      !next.includes('┌') &&
+      (next.includes(' algorithm') || next.includes(' is ') || next.includes(' used to ') || next.includes(' technique') || next.includes(' method'));
+
+    if (isHeading && isExplanation) {
+      const term = cleanTerm(current);
+      if (term.length >= 3 && !['method type', 'underfitting', 'overfitting'].includes(term.toLowerCase())) {
+        flashcards.push({
+          question: `What is ${term} and how does it work?`,
+          answer: `${term} — ${next}`,
+          conceptTag: term
+        });
+      }
+    }
+  }
+
+  // Pattern 2: Line with "• Term: Definition"
+  const colonRegex = /^[\s•\-\*\d\.\)]*\s*([^:\n—–]{2,45})\s*[:—–]\s*(.+)$/;
+
+  for (const line of lines) {
     const match = line.match(colonRegex);
     if (match) {
       const rawSubject = match[1].trim();
       const definition = match[2].trim();
       const subject = cleanTerm(rawSubject);
 
-      // Filter out meta lines like "Phase: Days", "SPERMATOGENESIS: OOGENESIS", etc.
       if (
         subject.length >= 2 &&
-        subject.length <= 50 &&
+        subject.length <= 40 &&
         definition.length >= 15 &&
         !subject.toLowerCase().startsWith('http') &&
-        !['note', 'tip', 'phase', 'days', 'step'].includes(subject.toLowerCase())
+        !['note', 'tip', 'phase', 'days', 'step', 'mechanism', 'pros/cons', 'loss function', 'sigmoid formula'].includes(subject.toLowerCase())
       ) {
-        // Natural question formulation
         let questionText = `What is ${subject}?`;
-        if (definition.toLowerCase().startsWith('the biological process') || definition.toLowerCase().includes('process by which')) {
-          questionText = `Define the process of ${subject}:`;
-        } else if (definition.toLowerCase().includes('function') || definition.toLowerCase().includes('serves as') || definition.toLowerCase().includes('responsible for')) {
-          questionText = `What is the primary function of ${subject}?`;
-        } else if (definition.toLowerCase().includes('organ') || definition.toLowerCase().includes('muscular') || definition.toLowerCase().includes('structure')) {
-          questionText = `Describe the structure and role of ${subject}:`;
+        if (subject.toLowerCase().includes('regression') || subject.toLowerCase().includes('classification') || subject.toLowerCase().includes('clustering')) {
+          questionText = `Define ${subject} in Machine Learning:`;
+        } else if (definition.toLowerCase().includes('technique') || definition.toLowerCase().includes('algorithm')) {
+          questionText = `Explain the concept of ${subject}:`;
         }
+
+        const completeAnswer = formatCompleteAnswer(subject, definition);
 
         flashcards.push({
           question: questionText,
-          answer: definition,
+          answer: completeAnswer,
           conceptTag: subject
         });
       }
     }
   }
 
-  // Pattern B: Sentence-based extraction ("X is the biological process...", "X is a/an...")
-  const sentences = cleanText
-    .split(/(?<=[.?!])\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 30 && s.length < 350);
-
-  const linkingPhrases = [
-    ' is the biological process by which ',
-    ' is the process of ',
-    ' is structured to ',
-    ' is specialized to ',
-    ' are tightly coiled structures where ',
-    ' is a hollow, muscular organ where ',
-    ' is a muscular canal serving as ',
-    ' is a coiled tube where ',
-    ' is a long muscular tube that ',
-    ' refers to ',
-    ' is defined as ',
-    ' consists of '
-  ];
-
-  for (const sentence of sentences) {
-    for (const phrase of linkingPhrases) {
-      if (sentence.includes(phrase)) {
-        const parts = sentence.split(phrase);
-        if (parts.length === 2) {
-          const rawSubject = parts[0].trim();
-          const definition = parts[1].trim();
-          const subject = cleanTerm(rawSubject);
-
-          if (
-            subject.length >= 3 &&
-            subject.length <= 45 &&
-            definition.length >= 20 &&
-            !subject.toLowerCase().startsWith('it ') &&
-            !subject.toLowerCase().startsWith('this ') &&
-            !subject.toLowerCase().startsWith('these ')
-          ) {
-            flashcards.push({
-              question: `Explain: ${subject}`,
-              answer: `${subject} ${phrase.trim()} ${definition}`,
-              conceptTag: subject
-            });
-          }
-        }
-      }
-    }
-  }
-
-  // Deduplicate flashcards by concept / question
+  // Deduplicate flashcards by conceptTag
   const uniqueFlashcards = [];
   const seenConcepts = new Set();
 
@@ -128,29 +138,11 @@ function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
     }
   }
 
-  // Safety fallback if the text has no standard bullet or definition patterns
-  if (uniqueFlashcards.length < 3) {
-    // Look for paragraphs with meaningful content
-    const paragraphs = cleanText.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 50);
-    paragraphs.forEach((p, idx) => {
-      if (idx < 5) {
-        const firstSentence = p.split('.')[0] + '.';
-        const remaining = p.slice(firstSentence.length).trim() || p;
-        uniqueFlashcards.push({
-          question: `Core Principle (${idx + 1}): What is covered regarding "${firstSentence.slice(0, 40)}..."?`,
-          answer: remaining,
-          conceptTag: deckTitle
-        });
-      }
-    });
-  }
-
-  // Generate Multiple Choice Questions from the extracted cards
+  // Generate MCQs with distinct options
   for (let i = 0; i < uniqueFlashcards.length && i < 12; i++) {
     const target = uniqueFlashcards[i];
     const correctAnswer = target.answer.length > 110 ? target.answer.slice(0, 105) + '...' : target.answer;
     
-    // Pick distractors from other flashcard answers
     const otherAnswers = uniqueFlashcards
       .filter((_, idx) => idx !== i)
       .map(f => f.answer.length > 110 ? f.answer.slice(0, 105) + '...' : f.answer);
@@ -165,12 +157,11 @@ function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
       }
     }
 
-    // High-quality contextual fallback distractors if card pool is small
     const fallbackDistractors = [
-      'Inhibits hormonal feedback to signal termination of follicular maturation.',
-      'Undergoes rapid mitosis without completing the necessary reduction division.',
-      'Acts as a passive conduit without secretory or protective biochemical activity.',
-      'Degenerates into non-viable polar bodies during early embryonic cleavage.'
+      'Trains an agent to maximize cumulative rewards through reinforcement policy gradient updates.',
+      'Maximizes data purity strictly using variance reduction for non-continuous targets.',
+      'Minimizes the distance between support vectors across orthogonal hyperplanes.',
+      'A non-linear kernel transformation that maps inputs to zero-dimensional manifolds.'
     ];
 
     while (options.length < 4) {
@@ -180,7 +171,6 @@ function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
       }
     }
 
-    // Shuffle options
     const shuffledOptions = options.sort(() => Math.random() - 0.5);
     const correctIndex = shuffledOptions.indexOf(correctAnswer);
 
