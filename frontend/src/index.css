@@ -556,8 +556,19 @@ body {
   font-size: 1.05rem;
   font-weight: 600;
   cursor: pointer;
-  margin-top: 1rem;
+  transition: opacity 0.2s;
+  white-space: nowrap;
 }
+
+.btn-primary-large:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.btn-primary-large:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 
 /* SM-2 Review Flashcard Page */
 .review-page {
@@ -1131,7 +1142,7 @@ body {
 /* Generate More Quiz Button Styles */
 .alert-success-banner {
   background: rgba(16, 185, 129, 0.15);
-  border: 1px solid var(--accent-green);
+  border: 1px solid #10b981;
   color: #86efac;
   padding: 0.85rem 1.2rem;
   border-radius: 10px;
@@ -1145,36 +1156,52 @@ body {
   justify-content: center;
   align-items: center;
   gap: 1.2rem;
-  margin: 2.5rem 0;
+  margin: 2.5rem 0 1rem;
   flex-wrap: wrap;
 }
 
 .btn-generate-more-secondary {
   background: transparent;
-  border: 1px solid var(--accent-cyan);
-  color: var(--accent-cyan);
+  border: 2px solid #06b6d4;
+  color: #06b6d4;
   padding: 0.85rem 1.8rem;
   border-radius: 10px;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .btn-generate-more-secondary:hover:not(:disabled) {
-  background: rgba(6, 182, 212, 0.1);
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+}
+
+.btn-generate-more-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn-action-more {
   background: linear-gradient(135deg, #06b6d4, #0891b2);
   color: white;
   border: none;
-  padding: 0.65rem 1.4rem;
-  border-radius: 8px;
+  padding: 0.85rem 1.8rem;
+  border-radius: 10px;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
+  transition: opacity 0.2s;
+  white-space: nowrap;
 }
 
 .btn-action-more:hover:not(:disabled) {
-  background: #0891b2;
+  opacity: 0.88;
+}
+
+.btn-action-more:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
