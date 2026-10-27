@@ -1,190 +1,112 @@
+const { GoogleGenAI } = require('@google/genai');
+
 /**
- * Precision Material Extractor for Flashcards & Quizzes
+ * Intelligent AI Extractor powered by Google Gemini
  * 
- * Supports:
- * 1. Heading + Definition paragraphs (e.g. "Support Vector Machines\nFinds the optimal hyperplane...")
- * 2. Bullet lists with colons (e.g. "• Regression: The target variable y is continuous...")
- * 3. Grammatical auto-completion (turns fragments like "Grouping similar..." into complete definitions)
- * 4. Strips LaTeX/ASCII diagrams and table noise
+ * Takes unstructured notes, markdown summaries, or textbooks and extracts:
+ * 1. High-Yield Flashcards (Concept, Natural Prompt, Precise Complete Explanation)
+ * 2. 4-Option Multiple Choice Questions (with realistic distractors and explanations)
+ * 
+ * Falls back gracefully to deterministic parsing if API key is not present.
  */
 
-function cleanTerm(term) {
-  if (!term) return '';
-  return term
-    .replace(/^[\s•\-\*\d\.\)\(]+/, '') // strip leading bullets, numbers, dashes
-    .replace(/[\(\[].*?[\)\]]/g, '')     // strip parenthetical info for cleaner question title
-    .trim();
-}
-
-function formatCompleteAnswer(term, definition) {
-  let cleanDef = definition.trim();
-  // Strip redundant leading "is a", "refers to"
-  cleanDef = cleanDef.replace(/^(is\s+(a|an|the)?|refers\s+to|are\s+)/i, '').trim();
-
-  // If definition starts with a lowercase or participle ("grouping", "used to", "the target"),
-  // make it a natural complete sentence:
-  const firstWord = cleanDef.split(' ')[0].toLowerCase();
-  
-  if (['grouping', 'predicting', 'dividing', 'finding', 'training', 'identifying', 'handling'].includes(firstWord)) {
-    return `${term} is the process of ${cleanDef.charAt(0).toLowerCase() + cleanDef.slice(1)}`;
-  }
-  
-  if (['the', 'a', 'an'].includes(firstWord)) {
-    return `${term}: ${cleanDef}`;
-  }
-
-  if (firstWord.startsWith('used')) {
-    return `${term} is ${cleanDef.charAt(0).toLowerCase() + cleanDef.slice(1)}`;
-  }
-
-  return `${term} refers to: ${cleanDef}`;
-}
-
-function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
+async function extractStudyMaterial(rawText, deckTitle = 'Study Deck') {
   if (!rawText || typeof rawText !== 'string') {
     throw new Error('Valid text content is required for generation');
   }
 
-  // Pre-clean: strip ASCII art boxes / tables / lines
-  const sanitized = rawText
-    .replace(/[┌┐└┘├┤─│┼]/g, '') // strip ASCII box borders
-    .replace(/\\\(.*?\\\)/g, (match) => match.replace(/[\\(\)]/g, '')) // clean \( \) LaTeX tags
-    .trim();
+  const apiKey = process.env.GEMINI_API_KEY;
 
-  const lines = sanitized.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (apiKey) {
+    try {
+      const ai = new GoogleGenAI({ apiKey });
 
-  const flashcards = [];
-  const mcqs = [];
+      const prompt = `You are an expert academic tutor and cognitive scientist.
+Analyze the following study notes and extract:
+1. High-yield flashcards for active recall. Every question must be a natural, clear question (e.g. "What is Regression in machine learning?", "What is the primary function of the Fallopian Tubes?"). Never use meta-questions like "What is Key Concept 1?" or "What is The Core Learning Paradigms?".
+Every answer must be a complete, grammatically sound, comprehensive explanation.
+2. 4-option multiple choice questions (MCQs) that test deep conceptual understanding, complete with 4 distinct options, the correct index (0-3), and a clear explanation.
 
-  // Pattern 1: Heading followed by a descriptive paragraph
-  // Example:
-  // "Logistic Regression"
-  // "Despite its name, this is a linear classification algorithm..."
-  for (let i = 0; i < lines.length - 1; i++) {
-    const current = lines[i];
-    const next = lines[i + 1];
+Study Notes:
+"""
+${rawText}
+"""
 
-    const isHeading = 
-      current.length >= 3 && 
-      current.length <= 40 && 
-      !current.includes(':') && 
-      !current.endsWith('.') &&
-      !current.startsWith('•') &&
-      !current.startsWith('-');
+You MUST respond strictly with valid JSON conforming to this schema (no extra text, no markdown backticks, just raw JSON):
+{
+  "flashcards": [
+    {
+      "question": "Clear, natural question",
+      "answer": "Complete, accurate explanation",
+      "conceptTag": "Short concept topic name"
+    }
+  ],
+  "mcqs": [
+    {
+      "question": "Conceptual question text",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Why this is correct"
+    }
+  ]
+}`;
 
-    const isExplanation = 
-      next.length >= 30 && 
-      !next.startsWith('•') && 
-      !next.startsWith('-') &&
-      !next.includes('┌') &&
-      (next.includes(' algorithm') || next.includes(' is ') || next.includes(' used to ') || next.includes(' technique') || next.includes(' method'));
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+        }
+      });
 
-    if (isHeading && isExplanation) {
-      const term = cleanTerm(current);
-      if (term.length >= 3 && !['method type', 'underfitting', 'overfitting'].includes(term.toLowerCase())) {
-        flashcards.push({
-          question: `What is ${term} and how does it work?`,
-          answer: `${term} — ${next}`,
-          conceptTag: term
-        });
+      const responseText = response.text.trim();
+      const parsed = JSON.parse(responseText);
+
+      if (parsed.flashcards && Array.isArray(parsed.flashcards) && parsed.flashcards.length > 0) {
+        return {
+          flashcards: parsed.flashcards.slice(0, 20),
+          mcqs: (parsed.mcqs || []).slice(0, 10)
+        };
       }
+    } catch (err) {
+      console.warn('Gemini extraction failed, falling back to local extractor:', err.message);
     }
   }
 
-  // Pattern 2: Line with "• Term: Definition"
+  // Fallback: Rule-based heuristic extraction
+  return fallbackRuleExtractor(rawText, deckTitle);
+}
+
+function fallbackRuleExtractor(rawText, deckTitle) {
+  const sanitized = rawText
+    .replace(/[┌┐└┘├┤─│┼]/g, '')
+    .trim();
+
+  const lines = sanitized.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const flashcards = [];
+  const mcqs = [];
+
   const colonRegex = /^[\s•\-\*\d\.\)]*\s*([^:\n—–]{2,45})\s*[:—–]\s*(.+)$/;
 
   for (const line of lines) {
     const match = line.match(colonRegex);
     if (match) {
-      const rawSubject = match[1].trim();
+      const subject = match[1].replace(/^[\s•\-\*\d\.\)\(]+/, '').replace(/[\(\[].*?[\)\]]/g, '').trim();
       const definition = match[2].trim();
-      const subject = cleanTerm(rawSubject);
 
-      if (
-        subject.length >= 2 &&
-        subject.length <= 40 &&
-        definition.length >= 15 &&
-        !subject.toLowerCase().startsWith('http') &&
-        !['note', 'tip', 'phase', 'days', 'step', 'mechanism', 'pros/cons', 'loss function', 'sigmoid formula'].includes(subject.toLowerCase())
-      ) {
-        let questionText = `What is ${subject}?`;
-        if (subject.toLowerCase().includes('regression') || subject.toLowerCase().includes('classification') || subject.toLowerCase().includes('clustering')) {
-          questionText = `Define ${subject} in Machine Learning:`;
-        } else if (definition.toLowerCase().includes('technique') || definition.toLowerCase().includes('algorithm')) {
-          questionText = `Explain the concept of ${subject}:`;
-        }
-
-        const completeAnswer = formatCompleteAnswer(subject, definition);
-
+      if (subject.length >= 2 && subject.length <= 40 && definition.length >= 15) {
         flashcards.push({
-          question: questionText,
-          answer: completeAnswer,
+          question: `Explain the concept of ${subject}:`,
+          answer: `${subject} refers to: ${definition}`,
           conceptTag: subject
         });
       }
     }
   }
 
-  // Deduplicate flashcards by conceptTag
-  const uniqueFlashcards = [];
-  const seenConcepts = new Set();
-
-  for (const f of flashcards) {
-    const key = f.conceptTag.toLowerCase();
-    if (!seenConcepts.has(key)) {
-      seenConcepts.add(key);
-      uniqueFlashcards.push(f);
-    }
-  }
-
-  // Generate MCQs with distinct options
-  for (let i = 0; i < uniqueFlashcards.length && i < 12; i++) {
-    const target = uniqueFlashcards[i];
-    const correctAnswer = target.answer.length > 110 ? target.answer.slice(0, 105) + '...' : target.answer;
-    
-    const otherAnswers = uniqueFlashcards
-      .filter((_, idx) => idx !== i)
-      .map(f => f.answer.length > 110 ? f.answer.slice(0, 105) + '...' : f.answer);
-
-    const options = [correctAnswer];
-
-    while (options.length < 4 && otherAnswers.length > 0) {
-      const randIdx = Math.floor(Math.random() * otherAnswers.length);
-      const picked = otherAnswers.splice(randIdx, 1)[0];
-      if (!options.includes(picked)) {
-        options.push(picked);
-      }
-    }
-
-    const fallbackDistractors = [
-      'Trains an agent to maximize cumulative rewards through reinforcement policy gradient updates.',
-      'Maximizes data purity strictly using variance reduction for non-continuous targets.',
-      'Minimizes the distance between support vectors across orthogonal hyperplanes.',
-      'A non-linear kernel transformation that maps inputs to zero-dimensional manifolds.'
-    ];
-
-    while (options.length < 4) {
-      const fb = fallbackDistractors.pop();
-      if (!options.includes(fb)) {
-        options.push(fb);
-      }
-    }
-
-    const shuffledOptions = options.sort(() => Math.random() - 0.5);
-    const correctIndex = shuffledOptions.indexOf(correctAnswer);
-
-    mcqs.push({
-      question: target.question,
-      options: shuffledOptions,
-      correctIndex,
-      explanation: target.answer
-    });
-  }
-
   return {
-    flashcards: uniqueFlashcards.slice(0, 25),
-    mcqs: mcqs.slice(0, 12)
+    flashcards: flashcards.slice(0, 15),
+    mcqs: []
   };
 }
 

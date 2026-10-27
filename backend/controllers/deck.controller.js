@@ -18,7 +18,7 @@ const generateDeck = async (req, res) => {
     }
 
     // Run extraction logic
-    const { flashcards, mcqs } = extractStudyMaterial(rawText, title);
+    const { flashcards, mcqs } = await extractStudyMaterial(rawText, title);
 
     if (flashcards.length === 0) {
       return res.status(400).json({ success: false, message: 'Could not extract valid concepts from text. Please try with more structured notes.' });
