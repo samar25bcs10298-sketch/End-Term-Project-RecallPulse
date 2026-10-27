@@ -7,12 +7,13 @@
 ## 📋 Project Information
 
 - **Project Name:** RecallPulse
-- **Student Name:** Samar Bhardwaj
+- **Student Name:** Samar Bharadwaj
 - **Domain:** EdTech / Cognitive Science / Developer Productivity
 - **Application Type:** Full-Stack Web Application (MERN)
 - **Live Deployed App:** [https://recall-pulse-beta.vercel.app](https://recall-pulse-beta.vercel.app)
 - **Live API Endpoint:** [https://recallpulse-backend.onrender.com](https://recallpulse-backend.onrender.com)
 - **GitHub Repository:** [https://github.com/samar25bcs10298-sketch/End-Term-Project-RecallPulse](https://github.com/samar25bcs10298-sketch/End-Term-Project-RecallPulse)
+- **Demo Video:** [Watch Live Demonstration (Google Drive)](https://drive.google.com/file/d/1Fl49SGlXCWQ5Wrz6vw9X5BhcsnbxNrD-/view?usp=sharing)
 
 
 ---
@@ -100,8 +101,8 @@ $$\text{Where } \text{EF}' \ge 1.3$$
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/RecallPulse.git
-cd RecallPulse
+git clone https://github.com/samar25bcs10298-sketch/End-Term-Project-RecallPulse.git
+cd End-Term-Project-RecallPulse
 ```
 
 ### 2. Backend Setup
